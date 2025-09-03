@@ -46,5 +46,24 @@ namespace LPR381.UI.Core
             }
             return dict;
         }
+        
+        public static double[] MatrixVectorMultiply(double[,] matrix, double[] vector)
+        {
+            int rows = matrix.GetLength(0);
+            int cols = matrix.GetLength(1);
+            if (cols != vector.Length)
+                throw new ArgumentException("Matrix columns must match vector length");
+                
+            var result = new double[rows];
+            for (int i = 0; i < rows; i++)
+            {
+                result[i] = 0;
+                for (int j = 0; j < cols; j++)
+                {
+                    result[i] += matrix[i, j] * vector[j];
+                }
+            }
+            return result;
+        }
     }
 }
