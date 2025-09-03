@@ -16,14 +16,25 @@ module InputFile =
         | s -> failwithf "Unexpected objective type '%s'" s
 
       let parseCoeff (s: string)=
-        if s.Length < 2 then failwithf "Invalid coeff string: '%s'" s
+        if s.Length < 2 then failwithf "Invalid coefficient '%s'. Expected format: +1.5 or -2.3" s
         let sign: Double = 
           match s.[0] with
           | '+' -> 1.0
           | '-' -> -1.0
-          | c -> failwithf "Unexpected sign '%c'" c
+          | c -> failwithf "Invalid coefficient '%s'. Must start with + or -" s
 
-        sign * Double.Parse s.[1..]
+        let numberPart = s.[1..]
+        if String.IsNullOrWhiteSpace(numberPart) then
+          failwithf "Invalid coefficient '%s'. Missing number after sign" s
+        
+        try
+          sign * Double.Parse(numberPart, System.Globalization.CultureInfo.InvariantCulture)
+        with
+        | :? System.FormatException -> 
+          if numberPart.Contains(",") then
+            failwithf "Invalid coefficient '%s'. Use period (.) for decimals, not comma (,)" s
+          else
+            failwithf "Invalid coefficient '%s'. Expected valid number after sign" s
 
       let objective = split.[1..] |> Array.map parseCoeff
 
@@ -31,19 +42,49 @@ module InputFile =
         if lineNum >= input.Length then failwith "Missing sign restriction line"
         if String.IsNullOrWhiteSpace input.[lineNum] then getConstraints (lineNum+1) constraintCoeff constraintSigns rhs
         else
-          let line = input.[lineNum]
+          let line = input.[lineNum].Trim()
           if line.StartsWith "+" || line.StartsWith "-" then
-            let split = line.Split ' '
+            let split = line.Split(' ', StringSplitOptions.RemoveEmptyEntries)
             if split.[0].Length = 1 then lineNum, constraintCoeff, constraintSigns, rhs else
-            let coeff = split.[.. split.Length - 2] |> Array.map parseCoeff
-            let last = split.[split.Length - 1]
             
-            let constraintSign, _rhs =
-              match last.[0] with
-              | '<' -> if last.[1] = '=' then ConstraintSign.LessOrEqual, Double.Parse last.[2..] else failwith "Invalid constraintsign: '<'"
-              | '>' -> if last.[1] = '=' then ConstraintSign.GreaterOrEqual, Double.Parse last.[2..] else failwith "Invalid constraintsign: '>'"
-              | '=' -> ConstraintSign.Equal, Double.Parse last.[1..]
-              | c -> failwithf "Invalid constraintsign: '%c'" c
+            // Parse constraint by finding the sign
+            let constraintSign, _rhs, coeffCount =
+              // Check if last two tokens are sign + number (e.g., ">= 4")
+              if split.Length >= 2 && (split.[split.Length - 2] = "<=" || split.[split.Length - 2] = ">=" || split.[split.Length - 2] = "=") then
+                let sign = match split.[split.Length - 2] with
+                           | "<=" -> ConstraintSign.LessOrEqual
+                           | ">=" -> ConstraintSign.GreaterOrEqual  
+                           | "=" -> ConstraintSign.Equal
+                           | _ -> failwith "Invalid sign"
+                try
+                  sign, Double.Parse(split.[split.Length - 1], System.Globalization.CultureInfo.InvariantCulture), split.Length - 2
+                with
+                | :? System.FormatException -> failwithf "Invalid RHS number format '%s'. Use period (.) for decimals, not comma (,)" split.[split.Length - 1]
+              else
+                // Check if last token contains sign + number (e.g., ">=4")
+                let last = split.[split.Length - 1]
+                if last.StartsWith "<=" then 
+                  try
+                    ConstraintSign.LessOrEqual, Double.Parse(last.[2..], System.Globalization.CultureInfo.InvariantCulture), split.Length - 1
+                  with
+                  | :? System.FormatException -> failwithf "Invalid RHS number format '%s'. Use period (.) for decimals, not comma (,)" last.[2..]
+                elif last.StartsWith ">=" then 
+                  try
+                    ConstraintSign.GreaterOrEqual, Double.Parse(last.[2..], System.Globalization.CultureInfo.InvariantCulture), split.Length - 1
+                  with
+                  | :? System.FormatException -> failwithf "Invalid RHS number format '%s'. Use period (.) for decimals, not comma (,)" last.[2..]
+                elif last.StartsWith "=" then 
+                  try
+                    ConstraintSign.Equal, Double.Parse(last.[1..], System.Globalization.CultureInfo.InvariantCulture), split.Length - 1
+                  with
+                  | :? System.FormatException -> failwithf "Invalid RHS number format '%s'. Use period (.) for decimals, not comma (,)" last.[1..]
+                else failwithf "Invalid constraint format: '%s'" last
+            
+            // Validate coefficient count matches objective
+            if coeffCount <> objective.Length then
+              failwithf "Constraint line '%s' has %d coefficients but objective has %d variables" line coeffCount objective.Length
+            
+            let coeff = split.[.. coeffCount - 1] |> Array.map parseCoeff
 
             getConstraints (lineNum + 1) (coeff :: constraintCoeff) (constraintSign :: constraintSigns) (_rhs :: rhs)
           else 

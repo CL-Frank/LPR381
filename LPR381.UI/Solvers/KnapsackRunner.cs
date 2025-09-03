@@ -11,7 +11,7 @@ namespace LPR381.UI.Solvers
         public override string Key => "knapsack";
         public override string Display => "Knapsack";
 
-        protected override LPFormulation BuildFormulation(UserProblem input)
+        public override LPFormulation BuildFormulation(UserProblem input)
         {
             var baseModel = base.BuildFormulation(input);
             var intRestrictions = new IntRestriction[baseModel.VarNames.Length];
@@ -130,18 +130,6 @@ namespace LPR381.UI.Solvers
                 else if (stateCase == "Branch")
                 {
                     var fractionalItem = (int)stateFields[0];
-                    
-                    // Check if should be fathomed by bound
-                    if (bestSolution.IsOptimal)
-                    {
-                        bool shouldFathom = (model.ObjectiveType == ObjectiveType.Max && totalValue <= bestSolution.Objective) ||
-                                          (model.ObjectiveType == ObjectiveType.Min && totalValue >= bestSolution.Objective);
-                        if (shouldFathom)
-                        {
-                            fathomed = true;
-                            fathomReason = "Bound worse than best candidate";
-                        }
-                    }
                     
                     if (!fathomed)
                     {

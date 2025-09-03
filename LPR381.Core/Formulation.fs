@@ -49,8 +49,24 @@ module Parsing=
       else
 
       let coefficientStr = input.[i..] |> Seq.takeWhile (fun c -> Char.IsDigit c || c = '.' || c = '-') |> Seq.toArray |> String
+      
+      // Check for comma in coefficient which indicates wrong decimal separator
+      let nextChar = if i + coefficientStr.Length < input.Length then Some input.[i + coefficientStr.Length] else None
+      if nextChar = Some ',' then
+        failwithf "Invalid decimal format. Use period (.) for decimals, not comma (,). Found comma after '%s'" coefficientStr
 
-      let coefficient = if coefficientStr.Length = 0 then sign else sign * Double.Parse(coefficientStr, CultureInfo.InvariantCulture)
+      let coefficient = 
+        if coefficientStr.Length = 0 then 
+          sign 
+        else 
+          try
+            sign * Double.Parse(coefficientStr, CultureInfo.InvariantCulture)
+          with
+          | :? System.FormatException -> 
+            if coefficientStr.Contains(",") then
+              failwithf "Invalid coefficient '%s'. Use period (.) for decimals, not comma (,)" coefficientStr
+            else
+              failwithf "Invalid coefficient format '%s'" coefficientStr
 
       let i = skipWhitespace (i + coefficientStr.Length)
       if i >= input.Length then failwith "Missing variable name"
@@ -142,8 +158,11 @@ type LPConstraint(
       error <- sprintf "Invalid constraint sign: '%s'" s
       false
 
+  new(variableNames: string array, values: double array, constraintSign: ConstraintSign, rhs: double)=
+    LPConstraint(Array.zip values variableNames, constraintSign, rhs)
+
   new(variableNames: string array, values: Vector<double>, constraintSign: ConstraintSign, rhs: double)=
-    LPConstraint(Array.zip (values.ToArray()) variableNames, constraintSign, rhs)
+    LPConstraint(variableNames, values.ToArray(), constraintSign, rhs)
 
 type KnapsackCanonical(
   variableNames: string array,
@@ -223,6 +242,7 @@ type LPFormulation(
   varSignRestrictions: SignRestriction[],
   varIntRestrictions: IntRestriction[]
 ) =
+
   do
     if objective.Length <> varNames.Length then invalidArg "varNames" "VarNames dimensions mismatch with objective length"
     if objective.Length <> constraintCoefficients.GetLength 1 then invalidArg "constraintCoefficients" "Constraint coefficients dimensions mismatch with objective length"
@@ -232,6 +252,19 @@ type LPFormulation(
     if rhs.Length <> constraintCoefficients.GetLength 0 then invalidArg "constraintCoefficients" "Constraint coefficients must have the same row count as rhs"
     if rhs.Length <> constraintSigns.Length then invalidArg "constraintSigns" "Constraint signs must be the same length as rhs"
 
+  let objectiveObject = lazy (
+      LPObjective(objectiveType, Array.zip objective varNames)
+    )
+
+  let constraintObjects = lazy (
+      let grabRow (row: int) =
+        [| 0 .. varNames.Length - 1 |]
+        |> Array.map (Array2D.get constraintCoefficients row)
+
+      constraintSigns
+      |> Array.mapi (fun i s -> LPConstraint(varNames, grabRow i, s, rhs.[i]))
+    )
+
   member val ObjectiveType = objectiveType
   member val VarNames = varNames
   member val Objective = objective
@@ -240,6 +273,66 @@ type LPFormulation(
   member val RHS = rhs
   member val VarSignRestrictions = varSignRestrictions
   member val VarIntRestrictions = varIntRestrictions
+
+  member _.WithConstraint(constr: LPConstraint)=
+    let rec sort (names: string list) (values: (double * string) array) (ret: (double * string) array) =
+      match names with
+      | name :: rest ->
+        sort rest (values |> Array.filter (snd >> (<>) name)) (Array.append ret (values |> Array.filter (snd >> (=) name)))
+      | [] ->
+        Array.append ret values
+
+    let sorted = LPConstraint(sort (Array.toList varNames) constr.LeftSide [||], constr.ConstraintSign, constr.RightSide)
+    let signRestrictions = Array.append varSignRestrictions (Array.create (max(sorted.LeftSide.Length - varSignRestrictions.Length) 0) SignRestriction.Positive)
+    let intRestrictions = Array.append varIntRestrictions (Array.create (max(sorted.LeftSide.Length - varIntRestrictions.Length) 0) IntRestriction.Unrestricted)
+
+    LPFormulation(objectiveObject.Value, Array.append constraintObjects.Value [| sorted |], signRestrictions, intRestrictions)
+
+  member _.WithActivity(variableName: string) (objectiveCoeff: double) (coeffColumn: double array) (signRestriction: SignRestriction)  =
+    if varNames |> Array.exists ((=) variableName) then invalidArg "name" "Variable name already taken"
+    if coeffColumn.Length <> rhs.Length then invalidArg "coeffColumn" "Coefficient column not the same length as the other columns"
+
+    let newCoeffMatrix = Array2D.zeroCreate rhs.Length (varNames.Length+1)
+    for i in [ 0 .. rhs.Length - 1 ] do
+      for j in [ 0 .. varNames.Length ] do
+        if j = varNames.Length then
+          newCoeffMatrix.[i,j] <- coeffColumn.[i]
+        else
+          newCoeffMatrix.[i,j] <- constraintCoefficients.[i,j]
+
+    LPFormulation(
+      objectiveType, 
+      Array.append varNames [| variableName |],
+      Array.append objective [| objectiveCoeff |],
+      newCoeffMatrix,
+      constraintSigns,
+      rhs,
+      Array.append varSignRestrictions [| signRestriction |],
+      Array.append varIntRestrictions [| IntRestriction.Unrestricted |]
+    )
+
+  member _.WithRHSUpdate(row: int) (newValue: double)=
+    if row < 0 || row >= rhs.Length then invalidArg "row" "row out of bounds"
+    let newRHS = rhs |> Array.copy
+    newRHS.[row] <- newValue
+
+    LPFormulation(objectiveType, varNames, objective, constraintCoefficients, constraintSigns, newRHS, varSignRestrictions, varIntRestrictions)
+
+  member _.WithObjectiveUpdate(column: int) (newValue: double)=
+    if column < 0 || column >= varNames.Length then invalidArg "column" "column out of bounds"
+    let newObjective = objective |> Array.copy
+    newObjective.[column] <- newValue
+
+    LPFormulation(objectiveType, varNames, newObjective, constraintCoefficients, constraintSigns, rhs, varSignRestrictions, varIntRestrictions)
+
+  member _.WithConstraintCoeffUpdate (row: int) (column: int) (newValue: double) =
+    if row < 0 || row >= rhs.Length then invalidArg "row" "row out of bounds"
+    if column < 0 || column >= varNames.Length then invalidArg "column" "column out of bounds"
+
+    let newCoeffMatrix = constraintCoefficients |> Array2D.copy
+    newCoeffMatrix.[row, column] <- newValue
+
+    LPFormulation(objectiveType, varNames, objective, newCoeffMatrix, constraintSigns, rhs, varSignRestrictions, varIntRestrictions)
 
   member _.ToKnapsackCanonical() =
     if varIntRestrictions |> Array.exists ((<>) IntRestriction.Binary) then failwith "Invalid knapsack: all variables should be binary"
@@ -371,6 +464,7 @@ type LPFormulation(
         constraintMat.[writeRow, writeColumn] <- 1
         rhs.[writeRow] <- 1
         writeRow <- writeRow + 1
+        writeColumn <- writeColumn + 1
         varIntRestrictions.[i] <- IntRestriction.Integer
       | _ -> ()
 
@@ -436,15 +530,57 @@ type LPFormulation(
       intRestrictions
     )
 
-type ITree<'T> =
-  abstract member Item: 'T
-  abstract member Children: ITree<'T>[]
-  abstract member Formulation: LPFormulation
-
 type SimplexResult =
   | Optimal of canonicalVars:Dictionary<string, double> * formulationVars:Dictionary<string, double> * objectiveValue:double
   | Unbounded of variableName:string
   | Infeasible of stoppingConstraint:int
 
-type ISimplexResultProvider =
-  abstract member SimplexResult: Option<SimplexResult>
+type DualityResult =
+  | StrongDuality of primalObjective:double * dualObjective:double
+  | WeakDuality of primalObjective:double * dualObjective:double
+  | NoDuality of reason:string
+
+type DualFormulation(primal: LPFormulation) =
+  let dualObjectiveType = if primal.ObjectiveType = ObjectiveType.Max then ObjectiveType.Min else ObjectiveType.Max
+  let dualVarNames = Array.init primal.RHS.Length (fun i -> sprintf "y%d" (i+1))
+  let dualObjective = primal.RHS
+  let dualConstraintMatrix = Array2D.init primal.VarNames.Length primal.RHS.Length (fun i j -> primal.ConstraintCoefficients.[j,i])
+  let dualRHS = primal.Objective
+  
+  // Dual constraint signs based on primal variable sign restrictions
+  let dualConstraintSigns = 
+    primal.VarSignRestrictions |> Array.map (fun signRestr ->
+      match primal.ObjectiveType, signRestr with
+      | ObjectiveType.Max, SignRestriction.Positive -> ConstraintSign.GreaterOrEqual
+      | ObjectiveType.Max, SignRestriction.Negative -> ConstraintSign.LessOrEqual
+      | ObjectiveType.Max, SignRestriction.Unrestricted -> ConstraintSign.Equal
+      | ObjectiveType.Min, SignRestriction.Positive -> ConstraintSign.LessOrEqual
+      | ObjectiveType.Min, SignRestriction.Negative -> ConstraintSign.GreaterOrEqual
+      | ObjectiveType.Min, SignRestriction.Unrestricted -> ConstraintSign.Equal
+      | _ -> ConstraintSign.Equal)
+  
+  // Dual variable sign restrictions based on primal constraint signs
+  let dualSignRestrictions = 
+    primal.ConstraintSigns |> Array.map (fun constrSign ->
+      match primal.ObjectiveType, constrSign with
+      | ObjectiveType.Max, ConstraintSign.LessOrEqual -> SignRestriction.Positive
+      | ObjectiveType.Max, ConstraintSign.GreaterOrEqual -> SignRestriction.Negative
+      | ObjectiveType.Max, ConstraintSign.Equal -> SignRestriction.Unrestricted
+      | ObjectiveType.Min, ConstraintSign.LessOrEqual -> SignRestriction.Negative
+      | ObjectiveType.Min, ConstraintSign.GreaterOrEqual -> SignRestriction.Positive
+      | ObjectiveType.Min, ConstraintSign.Equal -> SignRestriction.Unrestricted
+      | _ -> SignRestriction.Unrestricted)
+  
+  let dualIntRestrictions = Array.create dualVarNames.Length IntRestriction.Unrestricted
+
+  member _.ToLPFormulation() =
+    LPFormulation(
+      dualObjectiveType,
+      dualVarNames,
+      dualObjective,
+      dualConstraintMatrix,
+      dualConstraintSigns,
+      dualRHS,
+      dualSignRestrictions,
+      dualIntRestrictions
+    )
