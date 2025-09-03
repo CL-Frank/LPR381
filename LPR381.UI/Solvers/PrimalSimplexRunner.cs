@@ -15,6 +15,17 @@ namespace LPR381.UI.Solvers
             _iterations.Clear();
             AddCanonicalForm(model);
             
+            // Validate if problem is suitable for Primal Simplex
+            var validationResult = ValidateProblem(model);
+            if (!validationResult.IsValid)
+            {
+                return new SolveSummary
+                {
+                    Message = validationResult.ErrorMessage,
+                    IsOptimal = false
+                };
+            }
+            
             var root = new PrimalSimplex(model);
             var summary = new SolveSummary();
             var stack = new Stack<(ITree<SimplexNode> node, int idx)>();
@@ -53,7 +64,8 @@ namespace LPR381.UI.Solvers
                             summary.IsOptimal = true;
                             summary.Objective = (double)fields[2];
                             summary.VariableValues = FSharpInterop.ToDict(fields[1]);
-                            summary.Message = "Optimal solution found.";
+                            var objTypeStr = model.ObjectiveType == ObjectiveType.Max ? "maximization" : "minimization";
+                            summary.Message = $"Optimal solution found using Primal Simplex method for {objTypeStr} problem.";
                             break;
                         case "Unbounded":
                             summary.Message = $"Unbounded (variable {fields[0]}).";
@@ -73,6 +85,48 @@ namespace LPR381.UI.Solvers
             }
 
             return summary;
+        }
+        
+        private (bool IsValid, string ErrorMessage) ValidateProblem(LPFormulation model)
+        {
+            // Check for integer restrictions - Primal Simplex only handles continuous variables
+            for (int i = 0; i < model.VarIntRestrictions.Length; i++)
+            {
+                if (model.VarIntRestrictions[i] != IntRestriction.Unrestricted)
+                {
+                    return (false, $"Primal Simplex cannot handle integer restrictions. Variable '{model.VarNames[i]}' has integer restriction. Use Branch & Bound or Cutting Plane instead.");
+                }
+            }
+            
+            // Check for infeasible starting point indicators
+            var canonical = model.ToLPCanonical();
+            
+            // Check if RHS has negative values (indicates potential infeasible starting point)
+            for (int i = 0; i < canonical.RHS.Count; i++)
+            {
+                if (canonical.RHS[i] < 0)
+                {
+                    return (false, "Primal Simplex requires a feasible starting point. Problem has negative RHS values after conversion to canonical form. Use Revised Dual Simplex instead.");
+                }
+            }
+            
+            // Check for unrestricted variables - basic Primal Simplex works better with positive variables
+            bool hasUnrestrictedVars = false;
+            for (int i = 0; i < model.VarSignRestrictions.Length; i++)
+            {
+                if (model.VarSignRestrictions[i] == SignRestriction.Unrestricted)
+                {
+                    hasUnrestrictedVars = true;
+                    break;
+                }
+            }
+            
+            if (hasUnrestrictedVars)
+            {
+                return (false, "Primal Simplex works best with non-negative variables. Problem has unrestricted variables. Use Revised Simplex for better handling of unrestricted variables.");
+            }
+            
+            return (true, string.Empty);
         }
     }
 }

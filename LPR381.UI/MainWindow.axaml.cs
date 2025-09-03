@@ -163,10 +163,21 @@ public partial class MainWindow : Window
             PopulateSensitivityAnalysis();
             
             // Clear any previous sensitivity analysis status messages
-            if (_saNonBasicStatus != null) _saNonBasicStatus.Text = "Ready for analysis";
-            if (_saBasicStatus != null) _saBasicStatus.Text = "Ready for analysis";
-            if (_saColumnStatus != null) _saColumnStatus.Text = "Ready for analysis";
-            if (_saRhsStatus != null) _saRhsStatus.Text = "Ready for analysis";
+            var supportsSensitivity = runner.Key == "primal-simplex" || runner.Key == "revised-primal-simplex" || runner.Key == "revised-dual-simplex";
+            if (supportsSensitivity)
+            {
+                if (_saNonBasicStatus != null) _saNonBasicStatus.Text = "Ready for analysis";
+                if (_saBasicStatus != null) _saBasicStatus.Text = "Ready for analysis";
+                if (_saColumnStatus != null) _saColumnStatus.Text = "Ready for analysis";
+                if (_saRhsStatus != null) _saRhsStatus.Text = "Ready for analysis";
+            }
+            else
+            {
+                if (_saNonBasicStatus != null) _saNonBasicStatus.Text = "Sensitivity analysis not supported for this algorithm";
+                if (_saBasicStatus != null) _saBasicStatus.Text = "Sensitivity analysis not supported for this algorithm";
+                if (_saColumnStatus != null) _saColumnStatus.Text = "Sensitivity analysis not supported for this algorithm";
+                if (_saRhsStatus != null) _saRhsStatus.Text = "Sensitivity analysis not supported for this algorithm";
+            }
             
             // Switch to results tab
             var resultsTab = this.FindControl<TabItem>("ResultsTab");
@@ -857,10 +868,25 @@ public partial class MainWindow : Window
     {
         try
         {
+            // Check if the current solver supports sensitivity analysis
+            if (_lastRunner?.Key == "branch-and-bound" || _lastRunner?.Key == "cutting-plane" || _lastRunner?.Key == "knapsack")
+            {
+                ClearSensitivityDropdowns();
+                if (_saNonBasicStatus != null) _saNonBasicStatus.Text = "Sensitivity analysis not available for integer programming algorithms";
+                if (_saBasicStatus != null) _saBasicStatus.Text = "Sensitivity analysis not available for integer programming algorithms";
+                if (_saColumnStatus != null) _saColumnStatus.Text = "Sensitivity analysis not available for integer programming algorithms";
+                if (_saRhsStatus != null) _saRhsStatus.Text = "Sensitivity analysis not available for integer programming algorithms";
+                return;
+            }
+            
             var context = GetSensitivityContext();
             if (context == null) 
             {
                 ClearSensitivityDropdowns();
+                if (_saNonBasicStatus != null) _saNonBasicStatus.Text = "No sensitivity context available";
+                if (_saBasicStatus != null) _saBasicStatus.Text = "No sensitivity context available";
+                if (_saColumnStatus != null) _saColumnStatus.Text = "No sensitivity context available";
+                if (_saRhsStatus != null) _saRhsStatus.Text = "No sensitivity context available";
                 return;
             }
 
@@ -951,6 +977,10 @@ public partial class MainWindow : Window
         catch
         {
             ClearSensitivityDropdowns();
+            if (_saNonBasicStatus != null) _saNonBasicStatus.Text = "Error setting up sensitivity analysis";
+            if (_saBasicStatus != null) _saBasicStatus.Text = "Error setting up sensitivity analysis";
+            if (_saColumnStatus != null) _saColumnStatus.Text = "Error setting up sensitivity analysis";
+            if (_saRhsStatus != null) _saRhsStatus.Text = "Error setting up sensitivity analysis";
         }
     }
     
@@ -964,22 +994,34 @@ public partial class MainWindow : Window
     
     private RelaxedSimplexSensitivityContext? GetSensitivityContext()
     {
-            
         try
         {
             if(_lastRunner == null) return null;
             var formulation = ((SolverRunner)_lastRunner).BuildFormulation(GetUserInput());
+            
+            // Only simplex algorithms support sensitivity analysis
             switch(_lastRunner?.Key) {
                 case "primal-simplex":
-                    return (new PrimalSimplex(formulation) as ITree<SimplexNode>)?.SensitivityContext;
+                    var primalTree = new PrimalSimplex(formulation);
+                    Explorer.SolveSimplex(primalTree); // Solve to get final state
+                    return (primalTree as ITree<SimplexNode>)?.SensitivityContext;
+                    
                 case "revised-primal-simplex":
-                    return (new RevisedPrimalSimplex(formulation) as ITree<RevisedSimplexNode>)?.SensitivityContext;
+                    var revisedPrimalTree = new RevisedPrimalSimplex(formulation);
+                    Explorer.SolveSimplex(revisedPrimalTree); // Solve to get final state
+                    return (revisedPrimalTree as ITree<RevisedSimplexNode>)?.SensitivityContext;
+                    
                 case "revised-dual-simplex":
-                    return (new RevisedDualSimplex(formulation) as ITree<RevisedSimplexNode>)?.SensitivityContext;
+                    var revisedDualTree = new RevisedDualSimplex(formulation);
+                    Explorer.SolveSimplex(revisedDualTree); // Solve to get final state
+                    return (revisedDualTree as ITree<RevisedSimplexNode>)?.SensitivityContext;
+                    
+                // Integer programming algorithms don't support sensitivity analysis
                 case "branch-and-bound":
-                    return (new RevisedBranchAndBound(formulation) as ITree<RevisedBNBNode>)?.SensitivityContext;
                 case "cutting-plane":
-                    return (new RevisedCuttingPlanes(formulation) as ITree<RevisedCuttingPlanesNode>)?.SensitivityContext;
+                case "knapsack":
+                    return null;
+                    
                 default:
                     return null;
             }
