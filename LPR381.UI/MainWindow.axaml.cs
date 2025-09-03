@@ -61,6 +61,12 @@ public partial class MainWindow : Window
         InitializeComponent();
         CacheControls();
         SetupAlgorithmRadioButtons();
+        AddInitialConstraintRow();
+    }
+    
+    private void AddInitialConstraintRow()
+    {
+        AddConstraintRow();
     }
 
     private void CacheControls()
@@ -329,21 +335,21 @@ public partial class MainWindow : Window
         var row = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 5, 0, 0)
+            Margin = new Thickness(0, 3, 0, 0)
         };
 
         // Coefficients textbox
         var coeffBox = new TextBox
         {
-            Width = 250,
+            Width = 190,
             Watermark = "Coefficients e.g. 2x1 + 3x2"
         };
 
         // Operator dropdown
         var combo = new ComboBox
         {
-            Width = 70,
-            Margin = new Thickness(5, 0, 0, 0),
+            Width = 65,
+            Margin = new Thickness(8, 0, 0, 0),
             Items =
             {
                 new ComboBoxItem { Content = "<=" },
@@ -355,23 +361,28 @@ public partial class MainWindow : Window
         // RHS textbox
         var rhsBox = new TextBox
         {
-            Width = 80,
+            Width = 65,
             Watermark = "RHS",
-            Margin = new Thickness(5, 0, 0, 0),
+            Margin = new Thickness(8, 0, 0, 0),
         };
         // Delete button
         var deleteBtn = new Button
         {
-            Content = "Delete",    // small cross
-            Width = 110,
+            Content = "✕",
+            Width = 30,
             Height = 30,
-            Margin = new Thickness(5, 0, 0, 0)
+            Margin = new Thickness(8, 0, 0, 0),
+            FontSize = 14,
+            FontWeight = FontWeight.Bold
         };
 
-        // delete functionality
+        // delete functionality - prevent deleting all constraints
         deleteBtn.Click += (s, args) =>
         {
-            _panel?.Children.Remove(row);
+            if (_panel?.Children.Count > 1)
+            {
+                _panel?.Children.Remove(row);
+            }
         };
 
         // Add them to row
@@ -655,20 +666,20 @@ public partial class MainWindow : Window
         var row = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 5, 0, 0)
+            Margin = new Thickness(0, 3, 0, 0)
         };
 
         var coeffBox = new TextBox
         {
-            Width = 250,
+            Width = 190,
             Watermark = "Coefficients e.g. 2x1 + 3x2",
             Text = lhs
         };
 
         var combo = new ComboBox
         {
-            Width = 70,
-            Margin = new Thickness(5, 0, 0, 0),
+            Width = 65,
+            Margin = new Thickness(8, 0, 0, 0),
             Items =
             {
                 new ComboBoxItem { Content = "<=" },
@@ -680,9 +691,9 @@ public partial class MainWindow : Window
 
         var rhsBox = new TextBox
         {
-            Width = 80,
+            Width = 65,
             Watermark = "RHS",
-            Margin = new Thickness(5, 0, 0, 0),
+            Margin = new Thickness(8, 0, 0, 0),
             Text = rhs
         };
         
@@ -691,12 +702,19 @@ public partial class MainWindow : Window
             Content = "✕",
             Width = 30,
             Height = 30,
-            Margin = new Thickness(5, 0, 0, 0),
+            Margin = new Thickness(8, 0, 0, 0),
             FontSize = 14,
             FontWeight = FontWeight.Bold
         };
 
-        deleteBtn.Click += (s, args) => _panel?.Children.Remove(row);
+        // delete functionality - prevent deleting all constraints
+        deleteBtn.Click += (s, args) =>
+        {
+            if (_panel?.Children.Count > 1)
+            {
+                _panel?.Children.Remove(row);
+            }
+        };
 
         row.Children.Add(coeffBox);
         row.Children.Add(combo);
