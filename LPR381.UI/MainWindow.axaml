@@ -115,7 +115,7 @@
 								</StackPanel>
 
 								<!-- Canonical Form Preview - Full Width -->
-								<TextBox x:Name="CanonicalPreviewBox" AcceptsReturn="True" Height="150" Watermark="Canonical form will appear here" IsReadOnly="True" Margin="0,0,0,10" FontFamily="Consolas, Courier New, monospace"/>
+								<TextBox x:Name="CanonicalPreviewBox" AcceptsReturn="True" Height="300" Watermark="Canonical form will appear here" IsReadOnly="True" Margin="0,0,0,10" FontFamily="Consolas, Courier New, monospace"/>
 							</StackPanel>
 						</Border>
 					</StackPanel>
@@ -140,7 +140,7 @@
 					<TabItem Header="Iterations">
 						<StackPanel Margin="10">
 							<TextBlock Text="Algorithm Steps" FontWeight="Bold" Margin="0,0,0,10"/>
-							<TextBox x:Name="IterationsBox" AcceptsReturn="True" Height="400" IsReadOnly="True"
+							<TextBox x:Name="IterationsBox" AcceptsReturn="True" Height="500" IsReadOnly="True"
 									 FontFamily="Consolas, Courier New, monospace"
 									 Watermark="Algorithm iterations will appear here"/>
 						</StackPanel>
@@ -330,7 +330,7 @@
 										<Border BorderBrush="#333" BorderThickness="1" CornerRadius="5" Padding="15">
 											<StackPanel Spacing="10">
 												<TextBlock Text="Results" FontWeight="Bold" FontSize="14" HorizontalAlignment="Center"/>
-												<TextBox x:Name="SA_AddElements_Output" AcceptsReturn="True" Height="400" IsReadOnly="True" 
+												<TextBox x:Name="SA_AddElements_Output" AcceptsReturn="True" Height="500" IsReadOnly="True" 
 														 FontFamily="Consolas" Watermark="Results from adding activities or constraints will appear here"/>
 											</StackPanel>
 										</Border>
@@ -353,7 +353,7 @@
 													<Button Content="Solve Dual" Width="150" Click="SA_Duality_Solve_Click"/>
 													<Button Content="Verify Duality" Width="150" Click="SA_Duality_Verify_Click"/>
 												</StackPanel>
-												<TextBox x:Name="SA_Duality_Display" AcceptsReturn="True" Height="300" IsReadOnly="True" 
+												<TextBox x:Name="SA_Duality_Display" AcceptsReturn="True" Height="500" IsReadOnly="True" 
 														 Watermark="Dual problem formulation and results will appear here"/>
 												<TextBlock x:Name="SA_Duality_Status" TextWrapping="Wrap" Margin="0,5,0,0"/>
 											</StackPanel>
